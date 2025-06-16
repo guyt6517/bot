@@ -1,13 +1,11 @@
-from flask import Flask
-import threading
-import time
-import psutil
 import os
 import shutil
-import subprocess
 import tempfile
+import threading
+import time
 import requests
-import winreg
+import subprocess
+from flask import Flask, jsonify
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -15,62 +13,53 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# === CONFIGURE YOUR SETTINGS HERE ===
+# === CONFIG ===
 USERNAME = "hgfrytfgjftyyjgh"
 PASSWORD = "bm3047854"
 GAME_URL = "https://www.roblox.com/games/96666062715851/Public-Bathroom-Simulator"
 WAIT_SECONDS = 60
 CYCLES = 3
-# =====================================
 
 app = Flask(__name__)
 
-@app.route("/")
-def index():
-    return "Roblox bot is running."
-
-# === Installer Functions ===
-def is_chrome_installed():
-    chrome_paths = [
-        os.path.join(os.environ['PROGRAMFILES'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
-        os.path.join(os.environ['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    ]
-    return any(os.path.exists(path) for path in chrome_paths)
+def is_command_available(cmd):
+    return shutil.which(cmd) is not None
 
 def install_chrome():
-    print("Downloading Chrome installer...")
-    url = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
-    installer_path = os.path.join(tempfile.gettempdir(), "chrome_installer.exe")
-    with requests.get(url, stream=True) as r:
-        with open(installer_path, 'wb') as f:
+    print("Attempting to install Chromium via apt...")
+    subprocess.run(["sudo", "apt-get", "update"], check=True)
+    subprocess.run(["sudo", "apt-get", "install", "-y", "chromium-browser"], check=True)
+
+def is_chrome_installed():
+    return is_command_available("google-chrome") or is_command_available("chromium-browser")
+
+def is_sober_installed():
+    return is_command_available("sober")
+
+def install_sober():
+    sober_url = "https://github.com/soberwp/sober/releases/latest/download/sober-linux-x64"
+    target_path = "/usr/local/bin/sober"
+    tmp_path = os.path.join(tempfile.gettempdir(), "sober-linux-x64")
+
+    print(f"Downloading Sober from {sober_url} ...")
+    with requests.get(sober_url, stream=True) as r:
+        r.raise_for_status()
+        with open(tmp_path, "wb") as f:
             shutil.copyfileobj(r.raw, f)
-    print("Running Chrome installer...")
-    subprocess.run([installer_path, "/silent", "/install"], check=True)
 
-def is_roblox_installed():
-    try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Roblox")
-        _, _ = winreg.QueryValueEx(key, "InstallLocation")
-        return True
-    except FileNotFoundError:
-        return False
+    print("Download complete. Installing... (requires sudo)")
+    subprocess.run(["sudo", "mv", tmp_path, target_path], check=True)
+    subprocess.run(["sudo", "chmod", "+x", target_path], check=True)
+    print(f"Sober installed to {target_path}")
 
-def install_roblox():
-    print("Downloading Roblox installer...")
-    url = "https://setup.rbxcdn.com/RobloxPlayerLauncher.exe"
-    installer_path = os.path.join(tempfile.gettempdir(), "roblox_installer.exe")
-    with requests.get(url, stream=True) as r:
-        with open(installer_path, 'wb') as f:
-            shutil.copyfileobj(r.raw, f)
-    print("Running Roblox installer...")
-    subprocess.run([installer_path], check=True)
-
-# === Roblox Automation ===
 def kill_roblox():
-    for proc in psutil.process_iter(['pid', 'name']):
-        if proc.info['name'] and 'RobloxPlayerBeta' in proc.info['name']:
-            print(f"Killing Roblox process: {proc.info['name']} (PID {proc.info['pid']})")
-            psutil.Process(proc.info['pid']).kill()
+    # Kill sober or wine Roblox process if running
+    proc_list = subprocess.check_output(["ps", "ax"]).decode().splitlines()
+    for proc in proc_list:
+        if "sober" in proc or "RobloxPlayerBeta" in proc:
+            pid = int(proc.strip().split()[0])
+            print(f"Killing process {pid} for Roblox")
+            subprocess.run(["kill", "-9", str(pid)])
 
 def roblox_login(driver, username, password):
     driver.get("https://www.roblox.com/login")
@@ -91,12 +80,19 @@ def join_game(driver, game_url):
 def join_leave_cycle(game_url, username, password, wait_seconds=60, cycles=3):
     if not is_chrome_installed():
         install_chrome()
-    if not is_roblox_installed():
-        install_roblox()
+    if not is_sober_installed():
+        install_sober()
 
     chrome_options = Options()
-    chrome_options.add_argument("--window-position=0,1000")  # Simulates minimized window
+    chrome_path = shutil.which("google-chrome") or shutil.which("chromium-browser")
+    if chrome_path:
+        chrome_options.binary_location = chrome_path
+    chrome_options.add_argument("--window-position=0,1000")
     chrome_options.add_argument("--start-maximized")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--headless")  # comment out if want visible browser
 
     driver = webdriver.Chrome(service=Service("chromedriver"), options=chrome_options)
 
@@ -112,8 +108,18 @@ def join_leave_cycle(game_url, username, password, wait_seconds=60, cycles=3):
     finally:
         driver.quit()
 
-# === Background Task: Runs Once on Startup ===
 def start_bot_thread():
-    threading.Thread(target=join_leave_cycle, args=(GAME_URL, USERNAME, PASSWORD, WAIT_SECONDS, CYCLES)).start()
+    threading.Thread(target=join_leave_cycle, args=(GAME_URL, USERNAME, PASSWORD, WAIT_SECONDS, CYCLES), daemon=True).start()
 
-start_bot_thread()
+@app.route("/")
+def index():
+    return jsonify({"status": "Roblox bot is running."})
+
+@app.route("/start")
+def start_bot():
+    start_bot_thread()
+    return jsonify({"status": "Bot started"})
+
+if __name__ == "__main__":
+    start_bot_thread()
+    app.run(host="0.0.0.0", port=8000)
