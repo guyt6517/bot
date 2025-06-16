@@ -18,7 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 # === CONFIGURE YOUR SETTINGS HERE ===
 USERNAME = "hgfrytfgjftyyjgh"
 PASSWORD = "bm3047854"
-GAME_URL = "https://www.roblox.com/games/1234567890/Your-Game"
+GAME_URL = "https://www.roblox.com/games/96666062715851/Public-Bathroom-Simulator"
 WAIT_SECONDS = 60
 CYCLES = 3
 # =====================================
