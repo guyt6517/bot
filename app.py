@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string
+from flask import Flask
 import threading
 import time
 import psutil
@@ -15,43 +15,21 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# === CONFIGURE YOUR SETTINGS HERE ===
+USERNAME = "hgfrytfgjftyyjgh"
+PASSWORD = "bm3047854"
+GAME_URL = "https://www.roblox.com/games/1234567890/Your-Game"
+WAIT_SECONDS = 60
+CYCLES = 3
+# =====================================
+
 app = Flask(__name__)
 
-# === HTML Web UI ===
-form_html = """
-<!doctype html>
-<title>Roblox Join Bot</title>
-<h2>Roblox Auto Joiner</h2>
-<form method="POST">
-  <label>Username:</label><br>
-  <input name="username" required><br><br>
-  <label>Password:</label><br>
-  <input name="password" type="password" required><br><br>
-  <label>Game URL:</label><br>
-  <input name="game_url" required><br><br>
-  <label>Wait Time (seconds):</label><br>
-  <input name="wait_time" value="60"><br><br>
-  <label>Number of Cycles:</label><br>
-  <input name="cycles" value="3"><br><br>
-  <button type="submit">Start Bot</button>
-</form>
-"""
-
-@app.route("/", methods=["GET", "POST"])
+@app.route("/")
 def index():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        game_url = request.form["game_url"]
-        wait_time = int(request.form.get("wait_time", 60))
-        cycles = int(request.form.get("cycles", 3))
+    return "Roblox bot is running."
 
-        threading.Thread(target=join_leave_cycle, args=(game_url, username, password, wait_time, cycles)).start()
-        return "Bot started! You can close this tab."
-
-    return render_template_string(form_html)
-
-# === Roblox + Chrome Dependency Checks ===
+# === Installer Functions ===
 def is_chrome_installed():
     chrome_paths = [
         os.path.join(os.environ['PROGRAMFILES'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -87,7 +65,7 @@ def install_roblox():
     print("Running Roblox installer...")
     subprocess.run([installer_path], check=True)
 
-# === Core Logic ===
+# === Roblox Automation ===
 def kill_roblox():
     for proc in psutil.process_iter(['pid', 'name']):
         if proc.info['name'] and 'RobloxPlayerBeta' in proc.info['name']:
@@ -111,27 +89,31 @@ def join_game(driver, game_url):
     print("Clicked Play — Roblox should launch.")
 
 def join_leave_cycle(game_url, username, password, wait_seconds=60, cycles=3):
-    # Auto-install requirements
     if not is_chrome_installed():
         install_chrome()
     if not is_roblox_installed():
         install_roblox()
 
-    # Setup Chrome
     chrome_options = Options()
-    chrome_options.add_argument("--window-position=0,1000")  # Minimized
+    chrome_options.add_argument("--window-position=0,1000")  # Simulates minimized window
     chrome_options.add_argument("--start-maximized")
-    service = Service("chromedriver")  # Ensure chromedriver.exe is in the same dir or PATH
 
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(service=Service("chromedriver"), options=chrome_options)
 
-    roblox_login(driver, username, password)
+    try:
+        roblox_login(driver, username, password)
 
-    for i in range(cycles):
-        print(f"Cycle {i + 1}/{cycles}")
-        join_game(driver, game_url)
-        time.sleep(wait_seconds)
-        kill_roblox()
-        time.sleep(5)
+        for i in range(cycles):
+            print(f"Cycle {i + 1}/{cycles}")
+            join_game(driver, game_url)
+            time.sleep(wait_seconds)
+            kill_roblox()
+            time.sleep(5)
+    finally:
+        driver.quit()
 
-    driver.quit()
+# === Background Task: Runs Once on Startup ===
+def start_bot_thread():
+    threading.Thread(target=join_leave_cycle, args=(GAME_URL, USERNAME, PASSWORD, WAIT_SECONDS, CYCLES)).start()
+
+start_bot_thread()
