@@ -1,5 +1,5 @@
 flask
 selenium
 psutil
-gunicorn
 requests
+gunicorn
